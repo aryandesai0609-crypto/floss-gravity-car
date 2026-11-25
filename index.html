@@ -260,7 +260,7 @@ function interp(res, t){
 function drawRace(){
   const W = raceC.width, Hh = raceC.height, rs = allRes();
   rc.clearRect(0,0,W,Hh);
-  const left = 70, right = W - 30;
+  const left = 210, right = W - 40;
   const maxD = Math.max(5, ...rs.map(r=>r.dist))*1.06;
   const pxm = (right-left)/maxD;
   const laneH = Hh/rs.length;
