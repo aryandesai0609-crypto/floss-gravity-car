@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floss-Drive Gravity Car Simulator</title>
+<style>
+  :root{--bg:#0f1419;--panel:#171e26;--ink:#e8eef5;--mute:#9aa8b6;--line:#2a3440;--acc:#4fc3f7}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  header{padding:22px 28px 8px}
+  h1{margin:0;font-size:26px}
+  h2{font-size:19px;margin:0 0 10px}
+  .sub{color:var(--mute);margin-top:4px}
+  main{padding:8px 28px 40px;display:grid;gap:18px;max-width:1300px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  canvas{width:100%;display:block;background:#fbfbf7;border-radius:8px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  button{background:var(--acc);color:#04202d;border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--mute);font-weight:600}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .sliders{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px 18px}
+  .sliders label{font-size:13px;color:var(--mute);display:block}
+  .sliders input[type=range]{width:100%}
+  .sliders b{color:var(--ink)}
+  select{background:#0f1419;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px;width:100%}
+  .warn{color:#ffb74d}.bad{color:#ef5350}.ok{color:#81c784}
+  .designs{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+  .designs .card h3{margin:0 0 6px;font-size:16px}
+  .designs ul{margin:6px 0 0;padding-left:18px;font-size:13.5px;color:#cfd8e0}
+  .note{font-size:12.5px;color:var(--mute)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Floss-Drive Gravity Car Simulator</h1>
+  <div class="sub">A weight falls from a tower and pulls dental floss wrapped around the drive axle. Four car designs race side by side using a real physics model: energy, torque, rolling resistance, bearing friction, wheel inertia, pulley losses, and air drag.</div>
+</header>
+<main>
+  <section class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <h2 style="margin:0">Race (side view, distances to scale)</h2>
+      <div class="row">
+        <button id="play">Play race</button>
+        <button class="ghost" id="reset">Reset</button>
+        <label class="note">Speed <select id="spd" style="width:auto"><option value="1">1x</option><option value="2" selected>2x</option><option value="4">4x</option><option value="8">8x</option></select></label>
+      </div>
+    </div>
+    <canvas id="race" width="1240" height="560"></canvas>
+    <div class="note" id="clock" style="margin-top:6px">t = 0.0 s</div>
+  </section>
+
+  <section class="card">
+    <h2>Results</h2>
+    <table id="results"></table>
+    <div class="note" style="margin-top:8px">Floss limit = weakest measured floss break load (36.5 N) cut 50% for knots, divided by a safety factor of 3, which gives 6.1 N. Traction = drive force needed / grip available (above 100% means the wheels spin).</div>
+  </section>
+
+  <section class="grid2">
+    <div class="card"><h2>Speed vs time</h2><canvas id="gv" width="600" height="320"></canvas></div>
+    <div class="card"><h2>Where the energy goes</h2><canvas id="ge" width="600" height="320"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>Gear ratio sweep: distance vs axle-to-wheel ratio</h2>
+    <canvas id="gs" width="1240" height="330"></canvas>
+    <div class="note" style="margin-top:6px">Uses the "CD Long-Hauler" chassis. Below a critical ratio the floss can't pull hard enough to beat friction and the car never moves (the cliff). Above it, distance is nearly flat, then slowly drops because higher speeds waste more energy (air drag, weight impact, wheel spin). Best choice: the lowest ratio that still starts reliably, with about 2x margin.</div>
+  </section>
+
+  <section class="card">
+    <h2>Build your own design (adds a 5th lane)</h2>
+    <div class="sliders" id="sliders"></div>
+    <div class="row" style="margin-top:12px"><button id="addCustom">Run my design</button><span class="note" id="customOut"></span></div>
+  </section>
+
+  <section>
+    <h2>The four designs</h2>
+    <div class="designs" id="designCards"></div>
+  </section>
+
+  <section class="card note">
+    <b>Physics model.</b> Car position x; floss unwound s (ds = v·r/R dt); weight height H = |L − s|/n, where L = n·h is the floss length and n is the floss pulley ratio.
+    Equation of motion (Lagrange): (M<sub>eff</sub> + m<sub>w</sub>k²)·a + m<sub>w</sub>·k·k′·v² = ±m<sub>w</sub>g·k − F<sub>loss</sub>, where k = r/(nR) and M<sub>eff</sub> = M + ΣI/R².
+    F<sub>loss</sub> = C<sub>rr</sub>·Mg + μ<sub>b</sub>·Mg·r<sub>b</sub>/R + ½ρC<sub>d</sub>Av² + (1−η)·m<sub>w</sub>g·k (pulley/guide friction).
+    With a release catch the floss drops off at the bottom. Without one, the axle rewinds the floss and lifts the weight back up (the yo-yo brake).
+    Coefficients come from Engineering ToolBox (rolling and sliding friction), Valentini et al. 2025 (floss strength), OpenStax (wheel and axle, pulleys), and HyperPhysics (rotational inertia). Real cars usually go 20 to 40% shorter than ideal models because of misalignment and wobble.
+  </section>
+</main>
+
+<script>
+const g = 9.81, rho = 1.2;
+const FLOSS_ALLOW = 36.5 * 0.5 / 3; // N
+
+const DESIGNS = [
+  {id:'A', name:'A. Naive Build (control)', color:'#e53935',
+   desc:'What most teams build first: bottle-cap wheels, wooden dowel axle spinning in straws, floss dragged over a metal eye-hook, and the floss tied to the axle (no release).',
+   bullets:['Wheels: plastic bottle caps, R = 2 cm','Axle: 6 mm wooden dowel in straw bushings; floss wraps a fat 11 mm spool','Floss over a screw eye-hook (nylon on steel, μ ≈ 0.4)','Floss tied to the axle, so it rewinds and brakes the car'],
+   mCar:0.35, mW:0.5, h:0.5, R:0.02, mWheel:0.005, wheelK:0.5, Crr:0.03, mu_b:0.3, rb:0.003, eta:0.53, n:1, rStart:0.0055, rEnd:0.0055, release:false, CdA:0.012, muT:0.6, driveFrac:0.5},
+  {id:'B', name:'B. Floss Sprinter', color:'#fb8c00',
+   desc:'Built for speed. Medium hard-plastic wheels on ball bearings, a high gear ratio for a punchy launch, a bearing pulley at the tower top, and a pin release so the floss slips off at the bottom.',
+   bullets:['Wheels: hard plastic, R = 4 cm, on 608-style bearings','Floss wraps a 6 mm axle sleeve (r = 3 mm + floss), ratio r/R ≈ 0.085','Bearing pulley on the tower: ~96% efficient','Bent-pin release: floss loop slides off when the weight lands'],
+   mCar:0.30, mW:0.5, h:0.5, R:0.04, mWheel:0.012, wheelK:0.55, Crr:0.019, mu_b:0.002, rb:0.004, eta:0.96, n:1, rStart:0.0034, rEnd:0.0034, release:true, CdA:0.010, muT:0.6, driveFrac:0.55},
+  {id:'C', name:'C. CD Cone-Drive Long-Hauler', color:'#43a047',
+   desc:'Built for distance. Big, light CD wheels and a tapered (cone) axle. The floss starts on the fat end for a strong launch, then unwinds onto the skinny end so each centimeter of floss moves the car farther.',
+   bullets:['Wheels: CDs (R = 6 cm, 16 g, mass near hub)','Cone axle: floss goes from r = 7 mm down to r = 2 mm','Strong start (ratio 0.117), long glide (ratio 0.033)','Rubber band on CD edge for grip; bearing pulley; pin release'],
+   mCar:0.28, mW:0.5, h:0.5, R:0.06, mWheel:0.016, wheelK:0.51, Crr:0.015, mu_b:0.002, rb:0.004, eta:0.96, n:1, rStart:0.007, rEnd:0.002, release:true, CdA:0.012, muT:0.7, driveFrac:0.55},
+  {id:'D', name:'D. Floss Block-and-Tackle', color:'#1e88e5',
+   desc:'Uses dental floss twice: the weight hangs from a floss loop through a movable pulley (2:1). The axle strand only feels half the weight, which doubles the floss safety margin, and the floss paid out doubles (1.0 m from a 0.5 m drop).',
+   bullets:['2:1 floss pulley: half the tension, twice the floss length','Lets you use a heavier 0.8 kg weight safely (3.9 N per strand)','CD wheels R = 6 cm, r = 4 mm axle, effective ratio 0.033','Bearing pulleys (~95% each), pin release'],
+   mCar:0.30, mW:0.8, h:0.5, R:0.06, mWheel:0.016, wheelK:0.51, Crr:0.015, mu_b:0.002, rb:0.004, eta:0.92, n:2, rStart:0.004, rEnd:0.004, release:true, CdA:0.012, muT:0.7, driveFrac:0.55}
+];
+
+function simulate(p, opts={}){
+  const dt = 0.002, nW = 4;
+  const M = p.mCar + p.mW + nW*p.mWheel;
+  const Me = M + nW*p.wheelK*p.mWheel;
+  const L = p.n*p.h;
+  const rOf = s => { const f = Math.min(1, Math.max(0, s/L)); return p.rStart + (p.rEnd - p.rStart)*f; };
+  const drds = (p.rEnd - p.rStart)/L;
+  const Fst = p.Crr*M*g + p.mu_b*M*g*p.rb/p.R;
+  let t=0, x=0, v=0, s=0, released=false, stopped=false;
+  const E = {roll:0, bearing:0, air:0, pulley:0, impact:0, lifted:0};
+  const Ein = p.mW*g*p.h;
+  const out = {t:[0], x:[0], v:[0], H:[p.h], s:[0]};
+  let vmax=0, Tmax=0, tracMax=0, xDrive=null, tEnd=null, moved=false;
+  let side = -1; // sign(s-L)
+  const k0 = rOf(0)/(p.n*p.R);
+  if (p.eta*p.mW*g*k0 <= Fst + 1e-9) { stopped=true; }
+  let rec=0;
+  while(!stopped && t < (opts.tmax||90)){
+    const attached = !released;
+    const r = attached ? rOf(side<0 ? s : 2*L - s) : 0;
+    const kk = attached ? r/(p.n*p.R) : 0;
+    const kp = attached ? (side<0? drds : -drds)*(r/p.R)/(p.n*p.R) : 0;
+    const dir = Math.sign(v) || 1;
+    const Froll = p.Crr*M*g, Fbear = p.mu_b*M*g*p.rb/p.R, Fair = 0.5*rho*p.CdA*v*v;
+    const Fpul = attached ? (1-p.eta)*p.mW*g*kk : 0;
+    const Fg = attached ? -side*p.mW*g*kk : 0; // + forward when weight descending in drive (side<0)
+    const meff = Me + p.mW*kk*kk;
+    let a;
+    if (Math.abs(v) < 1e-4){
+      const avail = Math.abs(Fg) - Fpul - Froll - Fbear;
+      if (avail <= 0){ v=0; stopped=true; break; }
+      a = (Fg - Math.sign(Fg)*(Fpul+Froll+Fbear))/meff;
+    } else {
+      a = (Fg - p.mW*kk*kp*v*v*(side<0?1:1) - dir*(Froll+Fbear+Fair+Fpul))/meff;
+    }
+    const vOld = v;
+    v += a*dt;
+    if (moved && Math.sign(v)!==Math.sign(vOld) && vOld!==0){ // crossed zero
+      v = 0;
+      if (released) { stopped=true; }
+    }
+    if (Math.abs(v)>1e-4) moved=true;
+    const dx = v*dt; x += dx;
+    const dsn = attached ? v*r/p.R*dt : 0;
+    E.roll += Froll*Math.abs(dx); E.bearing += Fbear*Math.abs(dx); E.air += Fair*Math.abs(dx); E.pulley += Fpul*Math.abs(dx);
+    if (attached){
+      const sPrev = s; s += dsn;
+      // tension in weight strand(s): T = m_w (g - a_w), a_w = downward accel of weight
+      const aw = -side*(kk*a + kp*v*v);
+      const Tstrand = Math.max(0, p.mW*(g - aw))/p.n;
+      Tmax = Math.max(Tmax, Tstrand);
+      const Fdrive = Tstrand*r/p.R; // force at ground from the axle
+      const grip = p.muT*p.driveFrac*M*g;
+      tracMax = Math.max(tracMax, Fdrive/grip);
+      if ((sPrev - L)*(s - L) <= 0 && sPrev!==s){ // weight hits bottom
+        if (xDrive===null) xDrive = x;
+        const vw = kk*v; E.impact += 0.5*p.mW*vw*vw;
+        if (p.release){ released = true; v = v; }
+        else { v = v*Me/(Me + p.mW*kk*kk) ; side = Math.sign(s-L)||1; if (s===L) side = dir; }
+      }
+      if (!p.release){ side = (s > L) ? 1 : -1; }
+    }
+    t += dt;
+    vmax = Math.max(vmax, Math.abs(v));
+    if (++rec % 10 === 0){ out.t.push(t); out.x.push(x); out.v.push(v); out.s.push(s);
+      out.H.push(released ? 0 : Math.abs(L - s)/p.n); }
+    if (!p.release && moved && Math.abs(v)<1e-4){
+      const rr = rOf(side<0 ? s : 2*L - s), k2 = rr/(p.n*p.R);
+      if (p.mW*g*k2*p.eta <= Fst || Math.abs(L-s)<1e-4){ stopped=true; }
+    }
+  }
+  out.t.push(t); out.x.push(x); out.v.push(v); out.s.push(s); out.H.push(released?0:Math.abs(L-s)/p.n);
+  const Hend = released ? 0 : Math.abs(L - s)/p.n;
+  E.lifted = p.mW*g*Hend;
+  const KEend = 0.5*Me*v*v;
+  return {p, out, dist:x, vmax, tEnd:t, xDrive, Tmax, tracMax, E, Ein, never: !moved,
+          kStart: rOf(0)/(p.n*p.R), kEnd: rOf(L)/(p.n*p.R), released};
+}
+
+// ---------- drawing a car ----------
+function drawCar(ctx, X, groundY, p, scale, theta, H, opt={}){
+  // scale px per metre for the car body (not distance)
+  const R = Math.max(p.R*scale, 6), body = Math.max(0.24*scale, R*2*2.4), tower = p.h*scale*0.9 + 10;
+  ctx.save(); ctx.translate(X, groundY);
+  const rearX = -body*0.45, frontX = body*0.45;
+  const frontR = Math.max(R*0.6, 5);
+  // chassis
+  ctx.fillStyle = '#5d4037';
+  ctx.fillRect(rearX-6, -R-4, frontX-rearX+12, 6);
+  // tower over rear axle
+  ctx.strokeStyle='#6d4c41'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(rearX+4, -R-2); ctx.lineTo(rearX+4, -R-tower); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(rearX+body*0.35, -R-2); ctx.lineTo(rearX+4, -R-tower*0.55); ctx.stroke();
+  // pulley at top
+  const pulX = rearX+4, pulY = -R-tower;
+  ctx.fillStyle = p.eta>0.9 ? '#90a4ae' : '#bdbdbd';
+  ctx.beginPath(); ctx.arc(pulX+5, pulY, 5, 0, 7); ctx.fill();
+  if (p.eta<0.6){ ctx.strokeStyle='#757575'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(pulX+5,pulY,4,0,7); ctx.stroke(); }
+  // weight
+  const fullDrop = tower - R*0.2 - 18;
+  const wY = pulY + 10 + (1 - H/p.h)*fullDrop*0 + (p.h - H)/p.h*fullDrop;
+  const wX = pulX + 22;
+  // floss: axle -> pulley -> weight
+  const axY = -R;
+  ctx.strokeStyle = '#00acc1'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(rearX, axY); ctx.lineTo(pulX+1, pulY-4);
+  if (p.n===2){ ctx.lineTo(pulX+10, pulY-4); ctx.lineTo(wX-4, wY-8); ctx.moveTo(wX+4,wY-8); ctx.lineTo(wX+8, pulY+2); }
+  else { ctx.lineTo(pulX+10, pulY-4); ctx.lineTo(wX, wY-6); }
+  ctx.stroke();
+  if (p.n===2){ ctx.fillStyle='#90a4ae'; ctx.beginPath(); ctx.arc(wX, wY-8, 4, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#37474f'; const ws = 9 + p.mW*6;
+  ctx.fillRect(wX-ws/2, wY-6, ws, ws);
+  // wheels
+  function wheel(cx, rad, cd){
+    ctx.save(); ctx.translate(cx, -rad); ctx.rotate(theta*(p.R*scale/rad));
+    if (cd){ const gr = ctx.createRadialGradient(0,0,2,0,0,rad); gr.addColorStop(0,'#eceff1'); gr.addColorStop(0.6,'#b3e5fc'); gr.addColorStop(1,'#ce93d8');
+      ctx.fillStyle=gr; } else ctx.fillStyle='#424242';
+    ctx.beginPath(); ctx.arc(0,0,rad,0,7); ctx.fill();
+    ctx.strokeStyle = cd ? '#78909c' : '#9e9e9e'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(-rad,0); ctx.lineTo(rad,0); ctx.moveTo(0,-rad); ctx.lineTo(0,rad); ctx.stroke();
+    ctx.fillStyle='#212121'; ctx.beginPath(); ctx.arc(0,0,Math.max(2,rad*0.12),0,7); ctx.fill();
+    ctx.restore();
+  }
+  const cd = p.R>=0.05;
+  wheel(rearX, R, cd); wheel(frontX, cd?R:frontR*1.0 , cd);
+  // axle spool (cone)
+  ctx.fillStyle='#00838f';
+  const sp = Math.max(2, p.rStart*scale*1.2);
+  ctx.beginPath(); ctx.arc(rearX, -R, sp, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+// ---------- race ----------
+const raceC = document.getElementById('race'), rc = raceC.getContext('2d');
+let results = [], tNow = 0, playing = false, lastTS = 0, customRes = null;
+function allRes(){ return customRes ? results.concat([customRes]) : results; }
+function interp(res, t){
+  const o = res.out; if (t >= o.t[o.t.length-1]) { const n=o.t.length-1; return {x:o.x[n], v:o.v[n], H:o.H[n], s:o.s[n]}; }
+  let lo=0, hi=o.t.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(o.t[m]<=t) lo=m; else hi=m; }
+  const f=(t-o.t[lo])/(o.t[hi]-o.t[lo]||1);
+  return {x:o.x[lo]+(o.x[hi]-o.x[lo])*f, v:o.v[lo]+(o.v[hi]-o.v[lo])*f, H:o.H[lo]+(o.H[hi]-o.H[lo])*f, s:o.s[lo]+(o.s[hi]-o.s[lo])*f};
+}
+function drawRace(){
+  const W = raceC.width, Hh = raceC.height, rs = allRes();
+  rc.clearRect(0,0,W,Hh);
+  const left = 70, right = W - 30;
+  const maxD = Math.max(5, ...rs.map(r=>r.dist))*1.06;
+  const pxm = (right-left)/maxD;
+  const laneH = Hh/rs.length;
+  // grid
+  rc.font='11px system-ui'; rc.fillStyle='#78909c';
+  const step = maxD>30?5:(maxD>12?2:1);
+  for (let d=0; d<=maxD; d+=step){ const X=left+d*pxm; rc.strokeStyle='#e0e0e0'; rc.lineWidth=1; rc.beginPath(); rc.moveTo(X,0); rc.lineTo(X,Hh); rc.stroke(); rc.fillText(d+' m', X+2, Hh-4); }
+  rs.forEach((res,i)=>{
+    const gy = laneH*(i+1) - 18;
+    rc.strokeStyle='#9e9e9e'; rc.lineWidth=2; rc.beginPath(); rc.moveTo(0,gy); rc.lineTo(W,gy); rc.stroke();
+    const st = interp(res, tNow);
+    // trail
+    rc.strokeStyle = res.p.color; rc.globalAlpha=0.35; rc.lineWidth=4; rc.beginPath(); rc.moveTo(left, gy+6); rc.lineTo(left+Math.max(0,st.x)*pxm, gy+6); rc.stroke(); rc.globalAlpha=1;
+    // finish marker
+    rc.fillStyle = res.p.color; rc.fillRect(left+res.dist*pxm-1, gy-laneH+30, 2, laneH-30);
+    const theta = st.x/res.p.R;
+    drawCar(rc, left+st.x*pxm, gy, res.p, Math.min(260, laneH*0.85/ (res.p.h*0.9+0.1)), theta, st.H);
+    rc.fillStyle = res.p.color; rc.font='bold 13px system-ui';
+    rc.fillText(res.p.name, 8, gy-laneH+34);
+    rc.font='12px system-ui'; rc.fillStyle='#455a64';
+    rc.fillText(`${st.x.toFixed(2)} m   ${Math.abs(st.v).toFixed(2)} m/s` + (res.never?'   (never moves)':''), 8, gy-laneH+50);
+  });
+  document.getElementById('clock').textContent = `t = ${tNow.toFixed(1)} s`;
+}
+function frame(ts){
+  if(!playing) return;
+  const dtR = Math.min(0.05,(ts-lastTS)/1000); lastTS = ts;
+  tNow += dtR*parseFloat(document.getElementById('spd').value);
+  const tMax = Math.max(...allRes().map(r=>r.tEnd));
+  if (tNow >= tMax){ tNow = tMax; playing=false; document.getElementById('play').textContent='Play race'; }
+  drawRace();
+  if(playing) requestAnimationFrame(frame);
+}
+document.getElementById('play').onclick = ()=>{
+  if (playing){ playing=false; document.getElementById('play').textContent='Play race'; return; }
+  const tMax = Math.max(...allRes().map(r=>r.tEnd)); if (tNow>=tMax) tNow=0;
+  playing=true; document.getElementById('play').textContent='Pause'; lastTS=performance.now(); requestAnimationFrame(frame);
+};
+document.getElementById('reset').onclick = ()=>{ playing=false; tNow=0; document.getElementById('play').textContent='Play race'; drawRace(); };
+
+// ---------- table ----------
+function fmtPct(x){ return (x*100).toFixed(0)+'%'; }
+function renderTable(){
+  const rs = allRes();
+  let h = '<tr><th>Design</th><th>Distance</th><th>Top speed</th><th>Run time</th><th>Drive phase</th><th>Ratio r/(nR)</th><th>Peak floss tension</th><th>Traction used</th><th>Efficiency*</th></tr>';
+  rs.forEach(r=>{
+    const tcls = r.Tmax>FLOSS_ALLOW?'bad':(r.Tmax>FLOSS_ALLOW*0.8?'warn':'ok');
+    const gcls = r.tracMax>1?'bad':(r.tracMax>0.8?'warn':'ok');
+    const eff = r.Ein ? (r.E.roll+r.E.bearing+r.E.air)/r.Ein : 0;
+    h += `<tr><td><span class="sw" style="background:${r.p.color}"></span>${r.p.name}</td>
+      <td><b>${r.dist.toFixed(2)} m</b></td><td>${r.vmax.toFixed(2)} m/s</td><td>${r.tEnd.toFixed(1)} s</td>
+      <td>${r.xDrive!==null? r.xDrive.toFixed(2)+' m':'n/a'}</td>
+      <td>${r.kStart.toFixed(3)}${Math.abs(r.kStart-r.kEnd)>1e-4?' → '+r.kEnd.toFixed(3):''}</td>
+      <td class="${tcls}">${r.Tmax.toFixed(2)} N / ${FLOSS_ALLOW.toFixed(1)} N</td>
+      <td class="${gcls}">${fmtPct(r.tracMax)}</td><td>${fmtPct(eff)}</td></tr>`;
+  });
+  document.getElementById('results').innerHTML = h + '<tr><td colspan="9" class="note">*Efficiency = share of the falling weight\'s energy (m·g·h) that actually went into moving the car forward against rolling/bearing/air resistance.</td></tr>';
+}
+
+// ---------- charts ----------
+function axes(ctx, W, H, xmax, ymax, xl, yl, pad){
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#90a4ae'; ctx.lineWidth=1; ctx.font='11px system-ui'; ctx.fillStyle='#546e7a';
+  ctx.beginPath(); ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,H-pad.b); ctx.lineTo(W-pad.r,H-pad.b); ctx.stroke();
+  for(let i=0;i<=5;i++){ const y=H-pad.b-(H-pad.t-pad.b)*i/5; ctx.fillText((ymax*i/5).toFixed(ymax<3?2:1), 4, y+4);
+    ctx.strokeStyle='#eceff1'; ctx.beginPath(); ctx.moveTo(pad.l+1,y); ctx.lineTo(W-pad.r,y); ctx.stroke(); }
+  for(let i=0;i<=5;i++){ const x=pad.l+(W-pad.l-pad.r)*i/5; ctx.fillText((xmax*i/5).toFixed(xmax<1?3:(xmax<10?1:0)), x-8, H-pad.b+14); }
+  ctx.fillStyle='#37474f'; ctx.font='12px system-ui'; ctx.fillText(xl, W/2-30, H-4);
+  ctx.save(); ctx.translate(12, H/2+30); ctx.rotate(-Math.PI/2); ctx.fillText(yl,0,0); ctx.restore();
+}
+function drawSpeed(c){
+  const ctx=c.getContext('2d'), W=c.width, H=c.height, pad={l:44,r:14,t:14,b:34};
+  const rs=allRes(); const tmax=Math.max(...rs.map(r=>r.tEnd)), vmax=Math.max(...rs.map(r=>r.vmax))*1.1||1;
+  axes(ctx,W,H,tmax,vmax,'time (s)','speed (m/s)',pad);
+  rs.forEach((r,i)=>{ ctx.strokeStyle=r.p.color; ctx.lineWidth=2; ctx.beginPath();
+    r.out.t.forEach((t,j)=>{ const X=pad.l+(W-pad.l-pad.r)*t/tmax, Y=H-pad.b-(H-pad.t-pad.b)*Math.abs(r.out.v[j])/vmax; j?ctx.lineTo(X,Y):ctx.moveTo(X,Y); }); ctx.stroke();
+    ctx.fillStyle=r.p.color; ctx.font='bold 11px system-ui'; ctx.fillText(r.p.name, W-pad.r-200, pad.t+14+i*15); });
+}
+function drawEnergy(c){
+  const ctx=c.getContext('2d'), W=c.width, H=c.height; ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  const rs=allRes(); const cats=[['roll','Rolling resistance','#66bb6a'],['bearing','Axle/bearing friction','#ef5350'],['pulley','Floss guide/pulley friction','#ab47bc'],['air','Air drag','#29b6f6'],['impact','Weight impact','#ffa726'],['lifted','Re-lifted weight','#8d6e63']];
+  const bh = Math.min(40,(H-70)/rs.length - 10);
+  rs.forEach((r,i)=>{ let x=150; const y=12+i*(bh+12); const tot=r.Ein; ctx.save();
+    ctx.fillStyle=r.p.color; ctx.font='bold 11px system-ui'; ctx.fillText(r.p.name.split(' ').slice(0,3).join(' ').replace('(control)',''), 4, y+bh/2+4);
+    cats.forEach(([k,,col])=>{ const w=(W-170)*(r.E[k]/tot); ctx.fillStyle=col; ctx.fillRect(x,y,w,bh); x+=w; });
+    ctx.restore(); ctx.fillStyle='#37474f'; ctx.font='10px system-ui'; ctx.fillText((r.Ein).toFixed(2)+' J', W-16-14, y+bh/2+4); });
+  let lx=4, ly=H-28; ctx.font='11px system-ui';
+  cats.forEach(([k,lab,col],i)=>{ ctx.fillStyle=col; ctx.fillRect(lx,ly,10,10); ctx.fillStyle='#37474f'; ctx.fillText(lab,lx+14,ly+9); lx+= ctx.measureText(lab).width+30; if(lx>W-120){lx=4; ly+=15;} });
+}
+function drawSweep(c){
+  const ctx=c.getContext('2d'), W=c.width, H=c.height, pad={l:44,r:14,t:14,b:34};
+  const base = DESIGNS[2]; const pts=[];
+  for(let k=0.01;k<=0.20001;k+=0.002){ const r = k*base.R; const res = simulate({...base, rStart:r, rEnd:r}, {tmax:150}); pts.push([k,res.dist,res.tracMax,res.vmax]); }
+  const ymax=Math.max(...pts.map(p=>p[1]))*1.15;
+  axes(ctx,W,H,0.2,ymax,'axle-to-wheel ratio r/R','distance (m)',pad);
+  const X=k=>pad.l+(W-pad.l-pad.r)*k/0.2, Y=d=>H-pad.b-(H-pad.t-pad.b)*d/ymax;
+  const crit = pts.find(p=>p[1]>0.05);
+  if (crit){ const lo=crit[0]*1.5, hi=crit[0]*2.5; ctx.fillStyle='rgba(67,160,71,.13)'; ctx.fillRect(X(lo),pad.t,X(hi)-X(lo),H-pad.t-pad.b);
+    ctx.fillStyle='#2e7d32'; ctx.font='bold 12px system-ui'; ctx.fillText('recommended (1.5-2.5x stall ratio)', X(lo)+4, pad.t+48);
+    ctx.strokeStyle='#e53935'; ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(X(crit[0]),pad.t); ctx.lineTo(X(crit[0]),H-pad.b); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#c62828'; ctx.fillText('stall cliff ≈ '+crit[0].toFixed(3)+' (car never moves to the left)', X(crit[0])+6, pad.t+14); }
+  ctx.strokeStyle='#43a047'; ctx.lineWidth=2.5; ctx.beginPath();
+  pts.forEach(([k,d],j)=>{ j?ctx.lineTo(X(k),Y(d)):ctx.moveTo(X(k),Y(d)); }); ctx.stroke();
+  // speed on second scale
+  const vm=Math.max(...pts.map(p=>p[3]))*1.15; ctx.strokeStyle='#fb8c00'; ctx.setLineDash([3,3]); ctx.lineWidth=1.8; ctx.beginPath();
+  pts.forEach(([k,,,v],j)=>{ const yy=H-pad.b-(H-pad.t-pad.b)*v/vm; j?ctx.lineTo(X(k),yy):ctx.moveTo(X(k),yy); }); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='#ef6c00'; ctx.font='12px system-ui'; ctx.fillText('dashed orange = top speed (relative scale, max '+(vm/1.15).toFixed(2)+' m/s)', W-360, H-pad.b-10);
+  ctx.fillStyle='#2e7d32'; ctx.fillText('green = distance', W-360, H-pad.b-26);
+  const best = pts.reduce((a,b)=>b[1]>a[1]?b:a);
+  const slip = pts.find(p=>p[2]>1);
+  window.__sweep = {best, crit, slip, at05: pts.find(p=>Math.abs(p[0]-0.05)<0.0011), at10: pts.find(p=>Math.abs(p[0]-0.1)<0.0011), at20: pts[pts.length-1]};
+}
+
+// ---------- custom ----------
+const SL = [
+  ['mW','Falling weight (kg)',0.1,1.2,0.05,0.5],['h','Drop height (m)',0.2,1.0,0.05,0.5],
+  ['R','Drive wheel radius (cm)',1,10,0.5,6],['r1','Axle radius where floss starts (mm)',1,12,0.5,4],
+  ['r2','Axle radius where floss ends (mm, = start for straight)',1,12,0.5,4],['mCar','Car + tower mass (kg)',0.1,1,0.05,0.3],
+  ['n','Floss pulley ratio (1 = direct, 2 = block-and-tackle)',1,3,1,1]
+];
+const SEL = [
+  ['axle','Axle support',[['Ball bearings','b'],['Steel rod in plastic tube','t'],['Wood dowel in straw','s'],['PTFE-floss-wrapped bushing','p']]],
+  ['wheel','Wheel type',[['CD / thin hard plastic','cd'],['Hard plastic toy wheel','hp'],['Bottle cap','cap'],['Rubber tire','rub']]],
+  ['guide','Floss guide at tower top',[['Bearing pulley','bp'],['Smooth dowel','dw'],['Metal eye-hook','eh']]],
+  ['rel','Release at bottom?',[['Yes (pin release)','y'],['No (floss tied to axle)','n']]]
+];
+const sdiv = document.getElementById('sliders');
+SL.forEach(([k,l,mn,mx,st,v])=>{ sdiv.insertAdjacentHTML('beforeend',`<div><label>${l}: <b id="v_${k}">${v}</b></label><input type="range" id="s_${k}" min="${mn}" max="${mx}" step="${st}" value="${v}"></div>`);
+  document.getElementById('s_'+k).oninput=e=>document.getElementById('v_'+k).textContent=e.target.value; });
+SEL.forEach(([k,l,opts])=>{ sdiv.insertAdjacentHTML('beforeend',`<div><label>${l}</label><select id="s_${k}">${opts.map(o=>`<option value="${o[1]}">${o[0]}</option>`).join('')}</select></div>`); });
+document.getElementById('addCustom').onclick=()=>{
+  const val=k=>parseFloat(document.getElementById('s_'+k).value), sv=k=>document.getElementById('s_'+k).value;
+  const ax={b:[0.002,0.004],t:[0.15,0.0015],s:[0.35,0.003],p:[0.06,0.0015]}[sv('axle')];
+  const wh={cd:[0.015,0.016,0.51],hp:[0.019,0.012,0.55],cap:[0.03,0.005,0.5],rub:[0.035,0.02,0.6]}[sv('wheel')];
+  const eta={bp:0.96,dw:0.8,eh:0.53}[sv('guide')];
+  const n=val('n');
+  const p={id:'U',name:'Your design',color:'#8e24aa',mCar:val('mCar'),mW:val('mW'),h:val('h'),R:val('R')/100,mWheel:wh[1],wheelK:wh[2],Crr:wh[0],mu_b:ax[0],rb:ax[1],eta:Math.pow(eta,n),n,rStart:val('r1')/1000,rEnd:val('r2')/1000,release:sv('rel')==='y',CdA:0.012,muT:sv('wheel')==='rub'?0.9:0.6,driveFrac:0.55};
+  customRes = simulate(p);
+  document.getElementById('customOut').innerHTML = customRes.never ? '<span class="bad">Your car never moves: the floss pull (m·g·r/R) is smaller than friction. Use a bigger axle radius or a heavier weight.</span>' : `Your design: <b>${customRes.dist.toFixed(2)} m</b>, top speed ${customRes.vmax.toFixed(2)} m/s.`;
+  refreshAll(false);
+};
+
+function cards(){
+  document.getElementById('designCards').innerHTML = DESIGNS.map((d,i)=>`<div class="card"><h3 style="color:${d.color}">${d.name}</h3><canvas id="dc${i}" width="520" height="300"></canvas><p style="font-size:13.5px">${d.desc}</p><ul>${d.bullets.map(b=>`<li>${b}</li>`).join('')}</ul></div>`).join('');
+  DESIGNS.forEach((d,i)=>drawDiagram(document.getElementById('dc'+i), d, i));
+}
+function drawDiagram(c, d){
+  const ctx=c.getContext('2d'), W=c.width, H=c.height;
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  const gy=H-34; ctx.strokeStyle='#bdbdbd'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke();
+  const sc=380, cx=W*0.33; drawCar(ctx, cx, gy, d, sc, 0.3, d.h*0.55);
+  ctx.fillStyle='#263238'; ctx.font='bold 14px system-ui'; ctx.fillText(d.name, 10, 20);
+  // callouts
+  const R=Math.max(d.R*sc,6), body=Math.max(0.24*sc,R*2*2.4), rearX=cx-body*0.45, tower=d.h*sc*0.9+10;
+  const call=(x1,y1,x2,y2,t,col)=>{ ctx.strokeStyle=col||'#90a4ae'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.fillStyle=col||'#455a64'; ctx.font='11.5px system-ui'; ctx.fillText(t, x2+(x2<x1?-ctx.measureText(t).width-3:3), y2+4); };
+  call(rearX+9, gy-R-tower, rearX+60, gy-R-tower-2, d.n===2?'bearing pulleys (2:1)':(d.eta<0.6?'metal eye-hook (high friction)':'bearing pulley'));
+  call(rearX+26, gy-R-tower+10+(d.h*0.45/d.h)*(tower-R*0.2-18), rearX+75, gy-R-tower*0.5, 'falling weight '+d.mW+' kg');
+  call(rearX+(rearX+4-rearX)*0.5, gy-R-tower*0.5, rearX-38, gy-R-tower*0.62, 'dental floss','#00838f');
+  call(rearX, gy-R, rearX-30, gy-R-26, d.rStart!==d.rEnd?'cone axle':'drive axle','#00838f');
+  call(rearX, gy-4, rearX-26, gy+18, (d.R>=0.05?'CD wheel':(d.R<0.03?'bottle cap':'plastic wheel'))+' R='+(d.R*100).toFixed(0)+' cm');
+  ctx.font='12px system-ui'; ctx.fillStyle='#455a64';
+  const lines=['Drop height '+d.h+' m', 'Floss axle r = '+(d.rStart!==d.rEnd?(d.rStart*1000)+' → '+(d.rEnd*1000)+' mm':(d.rStart*1000).toFixed(1)+' mm'), 'Ratio r/(nR) = '+(d.rStart/(d.n*d.R)).toFixed(3)+(d.rStart!==d.rEnd?' → '+(d.rEnd/(d.n*d.R)).toFixed(3):''), d.n===2?'2:1 floss block-and-tackle':'Direct floss drive', d.mu_b>0.1?'Axle: dowel in straws':'Axle: ball bearings', d.release?'Pin release at bottom':'Floss tied (no release)'];
+  ctx.fillStyle='#f5f7fa'; ctx.fillRect(W-200,34,192,lines.length*17+12); ctx.fillStyle='#37474f';
+  lines.forEach((l,i)=>ctx.fillText(l, W-192, 52+i*17));
+}
+
+function refreshAll(resetT=true){
+  results = DESIGNS.map(d=>simulate(d));
+  renderTable(); drawSpeed(document.getElementById('gv')); drawEnergy(document.getElementById('ge'));
+  if (resetT){ const tMax=Math.max(...allRes().map(r=>r.tEnd)); tNow = tMax; }
+  drawRace();
+}
+cards(); refreshAll(); drawSweep(document.getElementById('gs'));
+// export helper for reports
+window.exportImages = function(){
+  const o={}; DESIGNS.forEach((d,i)=>o['design'+d.id]=document.getElementById('dc'+i).toDataURL('image/png'));
+  o.race=raceC.toDataURL('image/png'); o.speed=document.getElementById('gv').toDataURL('image/png');
+  o.energy=document.getElementById('ge').toDataURL('image/png'); o.sweep=document.getElementById('gs').toDataURL('image/png'); return o; };
+window.getResults = ()=>allRes().map(r=>({name:r.p.name, dist:r.dist, vmax:r.vmax, t:r.tEnd, xDrive:r.xDrive, Tmax:r.Tmax, trac:r.tracMax, kS:r.kStart, kE:r.kEnd, E:r.E, Ein:r.Ein, never:r.never}));
+</script>
+</body>
+</html>
