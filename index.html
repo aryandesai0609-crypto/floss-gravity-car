@@ -58,7 +58,7 @@
   <section class="card">
     <h2>Results</h2>
     <table id="results"></table>
-    <div class="note" style="margin-top:8px">Floss limit = weakest measured floss break load (36.5 N) cut 50% for knots, divided by a safety factor of 3, which gives 6.1 N. Traction = drive force needed / grip available (above 100% means the wheels spin).</div>
+    <div class="note" style="margin-top:8px">Floss limit: the weakest floss tested broke at 36.5 N as a knotted loop (Valentini 2025). We count only half of that per strand, then divide by a safety factor of 3, which gives 6.1 N. Traction = drive force needed / grip available (above 100% means the wheels spin).</div>
   </section>
 
   <section class="grid2">
@@ -69,7 +69,7 @@
   <section class="card">
     <h2>Gear ratio sweep: distance vs axle-to-wheel ratio</h2>
     <canvas id="gs" width="1240" height="330"></canvas>
-    <div class="note" style="margin-top:6px">Uses the "CD Long-Hauler" chassis. Below a critical ratio the floss can't pull hard enough to beat friction and the car never moves (the cliff). Above it, distance is nearly flat, then slowly drops because higher speeds waste more energy (air drag, weight impact, wheel spin). Best choice: the lowest ratio that still starts reliably, with about 2x margin.</div>
+    <div class="note" style="margin-top:6px">Uses the Design B budget chassis (CDs, steel rod in straws). Below a critical ratio the floss can't pull hard enough to beat friction and the car never moves (the cliff). Above it, distance is nearly flat, then slowly drops because higher speeds waste more energy (air drag, weight impact, wheel spin). Best choice: the lowest ratio that still starts reliably, with about 2x margin.</div>
   </section>
 
   <section class="card">
@@ -88,31 +88,31 @@
     Equation of motion (Lagrange): (M<sub>eff</sub> + m<sub>w</sub>k²)·a + m<sub>w</sub>·k·k′·v² = ±m<sub>w</sub>g·k − F<sub>loss</sub>, where k = r/(nR) and M<sub>eff</sub> = M + ΣI/R².
     F<sub>loss</sub> = C<sub>rr</sub>·Mg + μ<sub>b</sub>·Mg·r<sub>b</sub>/R + ½ρC<sub>d</sub>Av² + (1−η)·m<sub>w</sub>g·k (pulley/guide friction).
     With a release catch the floss drops off at the bottom. Without one, the axle rewinds the floss and lifts the weight back up (the yo-yo brake).
-    Coefficients come from Engineering ToolBox (rolling and sliding friction), Valentini et al. 2025 (floss strength), OpenStax (wheel and axle, pulleys), and HyperPhysics (rotational inertia). Real cars usually go 20 to 40% shorter than ideal models because of misalignment and wobble.
+    Coefficients come from Engineering ToolBox (rolling and sliding friction), Valentini et al. 2025 (floss strength), OpenStax (wheel and axle, pulleys), and HyperPhysics (rotational inertia). Real cars will go noticeably shorter than this ideal model because of misalignment, wobble, and string slip, so measure your own C<sub>rr</sub> and tune the model to match.
   </section>
 </main>
 
 <script>
 const g = 9.81, rho = 1.2;
-const FLOSS_ALLOW = 36.5 * 0.5 / 3; // N
+const FLOSS_ALLOW = 36.5 / 2 / 3; // N (knotted-loop break load, per strand, SF 3)
 
 const DESIGNS = [
-  {id:'A', name:'A. Naive Build (control)', color:'#e53935',
-   desc:'What most teams build first: bottle-cap wheels, wooden dowel axle spinning in straws, floss dragged over a metal eye-hook, and the floss tied to the axle (no release).',
-   bullets:['Wheels: plastic bottle caps, R = 2 cm','Axle: 6 mm wooden dowel in straw bushings; floss wraps a fat 11 mm spool','Floss over a screw eye-hook (nylon on steel, μ ≈ 0.4)','Floss tied to the axle, so it rewinds and brakes the car'],
-   mCar:0.35, mW:0.5, h:0.5, R:0.02, mWheel:0.005, wheelK:0.5, Crr:0.03, mu_b:0.3, rb:0.003, eta:0.53, n:1, rStart:0.0055, rEnd:0.0055, release:false, CdA:0.012, muT:0.6, driveFrac:0.5},
-  {id:'B', name:'B. Floss Sprinter', color:'#fb8c00',
-   desc:'Built for speed. Medium hard-plastic wheels on ball bearings, a high gear ratio for a punchy launch, a bearing pulley at the tower top, and a pin release so the floss slips off at the bottom.',
-   bullets:['Wheels: hard plastic, R = 4 cm, on 608-style bearings','Floss wraps a 6 mm axle sleeve (r = 3 mm + floss), ratio r/R ≈ 0.085','Bearing pulley on the tower: ~96% efficient','Bent-pin release: floss loop slides off when the weight lands'],
-   mCar:0.30, mW:0.5, h:0.5, R:0.04, mWheel:0.012, wheelK:0.55, Crr:0.019, mu_b:0.002, rb:0.004, eta:0.96, n:1, rStart:0.0034, rEnd:0.0034, release:true, CdA:0.010, muT:0.6, driveFrac:0.55},
-  {id:'C', name:'C. CD Cone-Drive Long-Hauler', color:'#43a047',
-   desc:'Built for distance. Big, light CD wheels and a tapered (cone) axle. The floss starts on the fat end for a strong launch, then unwinds onto the skinny end so each centimeter of floss moves the car farther.',
-   bullets:['Wheels: CDs (R = 6 cm, 16 g, mass near hub)','Cone axle: floss goes from r = 7 mm down to r = 2 mm','Strong start (ratio 0.117), long glide (ratio 0.033)','Rubber band on CD edge for grip; bearing pulley; pin release'],
-   mCar:0.28, mW:0.5, h:0.5, R:0.06, mWheel:0.016, wheelK:0.51, Crr:0.015, mu_b:0.002, rb:0.004, eta:0.96, n:1, rStart:0.007, rEnd:0.002, release:true, CdA:0.012, muT:0.7, driveFrac:0.55},
-  {id:'D', name:'D. Floss Block-and-Tackle', color:'#1e88e5',
-   desc:'Uses dental floss twice: the weight hangs from a floss loop through a movable pulley (2:1). The axle strand only feels half the weight, which doubles the floss safety margin, and the floss paid out doubles (1.0 m from a 0.5 m drop).',
-   bullets:['2:1 floss pulley: half the tension, twice the floss length','Lets you use a heavier 0.8 kg weight safely (3.9 N per strand)','CD wheels R = 6 cm, r = 4 mm axle, effective ratio 0.033','Bearing pulleys (~95% each), pin release'],
-   mCar:0.30, mW:0.8, h:0.5, R:0.06, mWheel:0.016, wheelK:0.51, Crr:0.015, mu_b:0.002, rb:0.004, eta:0.92, n:2, rStart:0.004, rEnd:0.004, release:true, CdA:0.012, muT:0.7, driveFrac:0.55}
+  {id:'A', name:'A. Naive Build (control)', color:'#e53935', cost:'~$12',
+   desc:'What most teams build first: bottle-cap wheels, a wooden dowel turning inside straws, floss dragged over a metal eye-hook, and floss tied straight to the axle (no release).',
+   bullets:['Wheels: bottle caps, R = 2 cm','Axle: 1/4 in wooden dowel in straws; floss wraps a fat 11 mm spot','Floss over a screw eye-hook (nylon on steel, μ ≈ 0.4)','Floss tied to the axle, so it rewinds and brakes the car'],
+   mCar:0.30, mW:0.5, h:0.5, R:0.02, mWheel:0.005, wheelK:0.5, Crr:0.03, mu_b:0.3, rb:0.0032, eta:0.53, n:1, rStart:0.0055, rEnd:0.0055, release:false, CdA:0.012, muT:0.6, driveFrac:0.5},
+  {id:'B', name:'B. Budget Floss Racer (easiest)', color:'#fb8c00', cost:'~$15',
+   desc:'The simplest good build. Four old CDs as wheels, a 1/8 in steel rod (or straight coat hanger) axle running through straws rubbed with pencil graphite, a thread spool on a nail as the pulley, and a bent paper clip that lets the floss slip off at the bottom.',
+   bullets:['Wheels: 4 old CDs, R = 6 cm (bottle-cap hub stuck on with general-purpose glue, not hot glue)','Axle: 1/8 in steel rod in straw bushings + pencil graphite','Floss wraps a masking-tape sleeve on the axle, r = 3.5 mm (ratio 0.058)','Thread-spool pulley on a nail (~93% efficient), paper-clip release','Weight: 500 mL water bottle (0.5 kg)'],
+   mCar:0.25, mW:0.5, h:0.5, R:0.06, mWheel:0.016, wheelK:0.51, Crr:0.015, mu_b:0.15, rb:0.0016, eta:0.93, n:1, rStart:0.0035, rEnd:0.0035, release:true, CdA:0.012, muT:0.7, driveFrac:0.55},
+  {id:'C', name:'C. Tape-Cone Racer (fastest)', color:'#43a047', cost:'~$15',
+   desc:'Same cheap chassis as B, but layers of masking tape build a cone on the axle. The floss starts on the thick end for a strong launch and ends on the thin end for more distance per centimeter of floss, like shifting gears on a bike.',
+   bullets:['Same CDs, steel rod, straws, spool pulley as B','Masking-tape cone: floss goes from r = 7 mm down to r = 3 mm','Ratio 0.117 at launch, 0.050 at the end','Paper-clip release; 0.5 kg water bottle'],
+   mCar:0.25, mW:0.5, h:0.5, R:0.06, mWheel:0.016, wheelK:0.51, Crr:0.015, mu_b:0.15, rb:0.0016, eta:0.93, n:1, rStart:0.007, rEnd:0.003, release:true, CdA:0.012, muT:0.7, driveFrac:0.55},
+  {id:'D', name:'D. Floss Block-and-Tackle (farthest)', color:'#1e88e5', cost:'~$15',
+   desc:'Same cheap chassis as B, plus one extra thread spool. The water bottle hangs from that spool on a loop of floss (a 2:1 pulley), so each floss strand only holds half the weight. That lets us safely use a heavier weight and pull twice as much floss.',
+   bullets:['2:1 floss pulley from two thread spools','Each strand holds half: 0.8 kg bottle gives only 3.9 N per strand (limit 6.1 N)','Floss axle sleeve r = 6 mm, effective ratio r/(2R) = 0.05','Same CDs, steel rod, straws, paper-clip release'],
+   mCar:0.26, mW:0.8, h:0.5, R:0.06, mWheel:0.016, wheelK:0.51, Crr:0.015, mu_b:0.15, rb:0.0016, eta:0.865, n:2, rStart:0.006, rEnd:0.006, release:true, CdA:0.012, muT:0.7, driveFrac:0.55}
 ];
 
 function simulate(p, opts={}){
@@ -352,7 +352,7 @@ function drawEnergy(c){
 }
 function drawSweep(c){
   const ctx=c.getContext('2d'), W=c.width, H=c.height, pad={l:44,r:14,t:14,b:34};
-  const base = DESIGNS[2]; const pts=[];
+  const base = DESIGNS[1]; const pts=[];
   for(let k=0.01;k<=0.20001;k+=0.002){ const r = k*base.R; const res = simulate({...base, rStart:r, rEnd:r}, {tmax:150}); pts.push([k,res.dist,res.tracMax,res.vmax]); }
   const ymax=Math.max(...pts.map(p=>p[1]))*1.15;
   axes(ctx,W,H,0.2,ymax,'axle-to-wheel ratio r/R','distance (m)',pad);
@@ -382,9 +382,9 @@ const SL = [
   ['n','Floss pulley ratio (1 = direct, 2 = block-and-tackle)',1,3,1,1]
 ];
 const SEL = [
-  ['axle','Axle support',[['Ball bearings','b'],['Steel rod in plastic tube','t'],['Wood dowel in straw','s'],['PTFE-floss-wrapped bushing','p']]],
+  ['axle','Axle support',[['Steel rod in straws + graphite','t'],['Ball bearings (608 upgrade, needs 8 mm axle)','b'],['Wood dowel in straws','s'],['PTFE-floss-wrapped bushing','p']]],
   ['wheel','Wheel type',[['CD / thin hard plastic','cd'],['Hard plastic toy wheel','hp'],['Bottle cap','cap'],['Rubber tire','rub']]],
-  ['guide','Floss guide at tower top',[['Bearing pulley','bp'],['Smooth dowel','dw'],['Metal eye-hook','eh']]],
+  ['guide','Floss guide at tower top',[['Thread spool on a nail','sp'],['Bearing pulley','bp'],['Smooth dowel (no spin)','dw'],['Metal eye-hook','eh']]],
   ['rel','Release at bottom?',[['Yes (pin release)','y'],['No (floss tied to axle)','n']]]
 ];
 const sdiv = document.getElementById('sliders');
@@ -393,9 +393,9 @@ SL.forEach(([k,l,mn,mx,st,v])=>{ sdiv.insertAdjacentHTML('beforeend',`<div><labe
 SEL.forEach(([k,l,opts])=>{ sdiv.insertAdjacentHTML('beforeend',`<div><label>${l}</label><select id="s_${k}">${opts.map(o=>`<option value="${o[1]}">${o[0]}</option>`).join('')}</select></div>`); });
 document.getElementById('addCustom').onclick=()=>{
   const val=k=>parseFloat(document.getElementById('s_'+k).value), sv=k=>document.getElementById('s_'+k).value;
-  const ax={b:[0.002,0.004],t:[0.15,0.0015],s:[0.35,0.003],p:[0.06,0.0015]}[sv('axle')];
+  const ax={b:[0.002,0.004],t:[0.15,0.0016],s:[0.3,0.0032],p:[0.08,0.0016]}[sv('axle')];
   const wh={cd:[0.015,0.016,0.51],hp:[0.019,0.012,0.55],cap:[0.03,0.005,0.5],rub:[0.035,0.02,0.6]}[sv('wheel')];
-  const eta={bp:0.96,dw:0.8,eh:0.53}[sv('guide')];
+  const eta={sp:0.93,bp:0.96,dw:0.7,eh:0.53}[sv('guide')];
   const n=val('n');
   const p={id:'U',name:'Your design',color:'#8e24aa',mCar:val('mCar'),mW:val('mW'),h:val('h'),R:val('R')/100,mWheel:wh[1],wheelK:wh[2],Crr:wh[0],mu_b:ax[0],rb:ax[1],eta:Math.pow(eta,n),n,rStart:val('r1')/1000,rEnd:val('r2')/1000,release:sv('rel')==='y',CdA:0.012,muT:sv('wheel')==='rub'?0.9:0.6,driveFrac:0.55};
   customRes = simulate(p);
@@ -404,7 +404,7 @@ document.getElementById('addCustom').onclick=()=>{
 };
 
 function cards(){
-  document.getElementById('designCards').innerHTML = DESIGNS.map((d,i)=>`<div class="card"><h3 style="color:${d.color}">${d.name}</h3><canvas id="dc${i}" width="520" height="300"></canvas><p style="font-size:13.5px">${d.desc}</p><ul>${d.bullets.map(b=>`<li>${b}</li>`).join('')}</ul></div>`).join('');
+  document.getElementById('designCards').innerHTML = DESIGNS.map((d,i)=>`<div class="card"><h3 style="color:${d.color}">${d.name} <span class="note">(${d.cost})</span></h3><canvas id="dc${i}" width="520" height="300"></canvas><p style="font-size:13.5px">${d.desc}</p><ul>${d.bullets.map(b=>`<li>${b}</li>`).join('')}</ul></div>`).join('');
   DESIGNS.forEach((d,i)=>drawDiagram(document.getElementById('dc'+i), d, i));
 }
 function drawDiagram(c, d){
@@ -416,13 +416,13 @@ function drawDiagram(c, d){
   // callouts
   const R=Math.max(d.R*sc,6), body=Math.max(0.24*sc,R*2*2.4), rearX=cx-body*0.45, tower=d.h*sc*0.9+10;
   const call=(x1,y1,x2,y2,t,col)=>{ ctx.strokeStyle=col||'#90a4ae'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.fillStyle=col||'#455a64'; ctx.font='11.5px system-ui'; ctx.fillText(t, x2+(x2<x1?-ctx.measureText(t).width-3:3), y2+4); };
-  call(rearX+9, gy-R-tower, rearX+60, gy-R-tower-2, d.n===2?'bearing pulleys (2:1)':(d.eta<0.6?'metal eye-hook (high friction)':'bearing pulley'));
+  call(rearX+9, gy-R-tower, rearX+60, gy-R-tower-2, d.n===2?'thread-spool pulleys (2:1)':(d.eta<0.6?'metal eye-hook (high friction)':'thread-spool pulley'));
   call(rearX+26, gy-R-tower+10+(d.h*0.45/d.h)*(tower-R*0.2-18), rearX+75, gy-R-tower*0.5, 'falling weight '+d.mW+' kg');
   call(rearX+(rearX+4-rearX)*0.5, gy-R-tower*0.5, rearX-38, gy-R-tower*0.62, 'dental floss','#00838f');
   call(rearX, gy-R, rearX-30, gy-R-26, d.rStart!==d.rEnd?'cone axle':'drive axle','#00838f');
   call(rearX, gy-4, rearX-26, gy+18, (d.R>=0.05?'CD wheel':(d.R<0.03?'bottle cap':'plastic wheel'))+' R='+(d.R*100).toFixed(0)+' cm');
   ctx.font='12px system-ui'; ctx.fillStyle='#455a64';
-  const lines=['Drop height '+d.h+' m', 'Floss axle r = '+(d.rStart!==d.rEnd?(d.rStart*1000)+' → '+(d.rEnd*1000)+' mm':(d.rStart*1000).toFixed(1)+' mm'), 'Ratio r/(nR) = '+(d.rStart/(d.n*d.R)).toFixed(3)+(d.rStart!==d.rEnd?' → '+(d.rEnd/(d.n*d.R)).toFixed(3):''), d.n===2?'2:1 floss block-and-tackle':'Direct floss drive', d.mu_b>0.1?'Axle: dowel in straws':'Axle: ball bearings', d.release?'Pin release at bottom':'Floss tied (no release)'];
+  const lines=['Drop height '+d.h+' m', 'Floss axle r = '+(d.rStart!==d.rEnd?(d.rStart*1000)+' → '+(d.rEnd*1000)+' mm':(d.rStart*1000).toFixed(1)+' mm'), 'Ratio r/(nR) = '+(d.rStart/(d.n*d.R)).toFixed(3)+(d.rStart!==d.rEnd?' → '+(d.rEnd/(d.n*d.R)).toFixed(3):''), d.n===2?'2:1 floss block-and-tackle':'Direct floss drive', d.mu_b>=0.3?'Axle: wood dowel in straws':(d.mu_b>=0.1?'Axle: steel rod in straws':'Axle: ball bearings'), 'Est. cost: '+d.cost, d.release?'Pin release at bottom':'Floss tied (no release)'];
   ctx.fillStyle='#f5f7fa'; ctx.fillRect(W-200,34,192,lines.length*17+12); ctx.fillStyle='#37474f';
   lines.forEach((l,i)=>ctx.fillText(l, W-192, 52+i*17));
 }
